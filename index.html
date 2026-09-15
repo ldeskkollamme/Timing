@@ -1,0 +1,899 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>NUMBER CHALLENGE - 2-Player Real-Time Multiplayer</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        brand: { dark:'#0B0D1B', card:'#151932', purple:'#7928CA', pink:'#FF0080', cyan:'#00DFD8', yellow:'#FDBB2D', green:'#10B981', red:'#EF4444' }
+      },
+      animation: {
+        'pulse-fast':'pulse 1s cubic-bezier(0.4,0,0.6,1) infinite',
+        'bounce-short':'bounce 0.6s ease infinite',
+        'spin-slow':'spin 12s linear infinite',
+        'float':'float 6s ease-in-out infinite',
+        'shimmer':'shimmer 2.2s linear infinite'
+      },
+      keyframes: {
+        float:{'0%,100%':{transform:'translateY(0px)'},'50%':{transform:'translateY(-12px)'}},
+        shimmer:{'0%':{transform:'translateX(-100%)'},'100%':{transform:'translateX(200%)'}}
+      }
+    }
+  }
+}
+</script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&display=swap');
+*{font-family:'Outfit',sans-serif;-webkit-tap-highlight-color:transparent;user-select:none;}
+.font-game{font-family:'Fredoka',cursive,sans-serif;}
+body{background:#0B0D1B;}
+.neon-glow-pink{box-shadow:0 0 25px rgba(255,0,128,.45);}
+.neon-glow-cyan{box-shadow:0 0 25px rgba(0,223,216,.45);}
+.neon-glow-yellow{box-shadow:0 0 25px rgba(253,187,45,.45);}
+.text-gradient-fire{background:linear-gradient(135deg,#FF0080 0%,#B24BF3 45%,#00DFD8 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+.text-gradient-gold{background:linear-gradient(135deg,#FFE000 0%,#FF9A00 60%,#FF0080 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+::-webkit-scrollbar{width:6px;height:6px;}
+::-webkit-scrollbar-track{background:rgba(15,23,42,.6);border-radius:8px;}
+::-webkit-scrollbar-thumb{background:linear-gradient(180deg,#7928CA,#FF0080);border-radius:8px;}
+.number-btn{aspect-ratio:1/1;transition:all .18s cubic-bezier(.34,1.56,.64,1);position:relative;overflow:hidden;}
+.number-btn:active{transform:scale(.92);}
+.number-btn.selected{border-color:#00DFD8 !important;box-shadow:0 0 20px #00DFD8,inset 0 0 12px rgba(0,223,216,.6);transform:scale(1.08);background:linear-gradient(135deg,#7928CA,#00DFD8) !important;color:#fff !important;}
+.number-btn:not(.selected):not(:disabled):hover{transform:translateY(-2px) scale(1.04);}
+.badge-pulse{animation:pulseGlow 1.5s infinite alternate;}
+@keyframes pulseGlow{0%{transform:scale(1);filter:drop-shadow(0 0 4px #00DFD8);}100%{transform:scale(1.04);filter:drop-shadow(0 0 14px #FF0080);}}
+#bg-canvas{position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:0;pointer-events:none;}
+.glass{background:rgba(21,25,50,.88);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);}
+.card-shine{position:relative;overflow:hidden;}
+.card-shine::after{content:'';position:absolute;top:0;left:0;width:60%;height:100%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.08),transparent);animation:shimmer 3.5s linear infinite;pointer-events:none;}
+.btn-sheen{position:relative;overflow:hidden;}
+.btn-sheen::before{content:'';position:absolute;top:0;left:-80%;width:50%;height:100%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.35),transparent);transform:skewX(-20deg);transition:left .5s;}
+.btn-sheen:hover::before{left:130%;}
+.grid-fade{mask-image:linear-gradient(to bottom,black 88%,transparent 100%);}
+.turn-glow-pink{box-shadow:0 0 0 1px rgba(255,0,128,.4),0 8px 30px -8px rgba(255,0,128,.5);}
+.turn-glow-cyan{box-shadow:0 0 0 1px rgba(0,223,216,.4),0 8px 30px -8px rgba(0,223,216,.5);}
+.chip{font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:4px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.12);}
+input,textarea{user-select:text;-webkit-user-select:text;}
+.pop-in{animation:popIn .35s cubic-bezier(.34,1.56,.64,1);}
+@keyframes popIn{0%{transform:scale(.85);opacity:0;}100%{transform:scale(1);opacity:1;}}
+.float-num{position:absolute;font-family:'Fredoka';font-weight:700;opacity:.08;pointer-events:none;animation:float 7s ease-in-out infinite;}
+</style>
+</head>
+<body class="bg-brand-dark text-slate-100 min-h-screen overflow-x-hidden flex flex-col justify-between relative selection:bg-brand-pink selection:text-white">
+
+<canvas id="bg-canvas"></canvas>
+<div class="fixed inset-0 z-0 pointer-events-none">
+<div class="absolute -top-32 -left-32 w-[420px] h-[420px] rounded-full bg-brand-purple/30 blur-[110px]"></div>
+<div class="absolute top-1/3 -right-32 w-[420px] h-[420px] rounded-full bg-brand-pink/20 blur-[110px]"></div>
+<div class="absolute bottom-0 left-1/3 w-[500px] h-[300px] rounded-full bg-brand-cyan/15 blur-[110px]"></div>
+<div class="absolute inset-0 opacity-[0.07]" style="background-image:linear-gradient(rgba(255,255,255,.6) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.6) 1px,transparent 1px);background-size:44px 44px;"></div>
+</div>
+
+<header class="relative z-20 w-full max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+<div class="flex items-center space-x-2.5 cursor-pointer" onclick="app.showScreen('home')">
+<div class="w-11 h-11 rounded-2xl bg-gradient-to-tr from-brand-pink via-brand-purple to-brand-cyan flex items-center justify-center font-game font-bold text-2xl text-white shadow-lg shadow-pink-500/40 border border-white/20">#</div>
+<div>
+<h1 class="text-xl font-black tracking-wider text-gradient-fire leading-none">NUMBER CHALLENGE</h1>
+<p class="text-[10px] text-slate-400 font-bold tracking-[0.22em] uppercase mt-1">100 Levels • Realtime 1v1</p>
+</div>
+</div>
+<div class="flex items-center space-x-2">
+<button id="btn-db-status" onclick="app.openConfigModal()" class="px-2.5 py-2 rounded-xl bg-slate-800/80 border border-slate-700 hover:border-brand-cyan text-xs font-semibold flex items-center space-x-1.5 transition backdrop-blur">
+<span id="db-indicator" class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+<span id="db-label" class="text-slate-300 hidden sm:inline">Demo Mode</span>
+<span id="db-label-m" class="text-slate-300 sm:hidden">Demo</span>
+</button>
+<button id="btn-sound" onclick="soundEngine.toggleSound()" class="w-10 h-10 rounded-xl bg-slate-800/80 border border-slate-700 hover:border-cyan-400 flex items-center justify-center text-cyan-400 transition hover:scale-105 active:scale-95 shadow-md">
+<svg id="sound-icon-on" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>
+<svg id="sound-icon-off" class="w-5 h-5 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"/></svg>
+</button>
+</div>
+</header>
+
+<main class="relative z-10 w-full max-w-md md:max-w-xl lg:max-w-3xl mx-auto px-4 py-2 flex-grow flex flex-col justify-center">
+
+<!-- HOME -->
+<section id="screen-home" class="w-full flex flex-col items-center text-center space-y-5">
+<div class="relative w-full max-w-md">
+<div class="absolute -inset-1 bg-gradient-to-r from-brand-pink via-brand-purple to-brand-cyan rounded-[26px] blur-xl opacity-60 animate-pulse"></div>
+<div class="relative glass border border-slate-700/60 p-6 md:p-8 rounded-[26px] shadow-2xl w-full card-shine overflow-hidden">
+<span class="float-num text-6xl top-4 left-4">7</span>
+<span class="float-num text-7xl bottom-8 right-6" style="animation-delay:1.2s">42</span>
+<span class="float-num text-5xl top-1/2 left-8" style="animation-delay:2s">99</span>
+<div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-brand-purple/25 border border-brand-purple/60 text-brand-cyan text-[11px] font-extrabold tracking-[0.18em] uppercase mb-3">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Real-time Online Duel • 2 Players
+</div>
+<h2 class="text-4xl md:text-5xl font-black font-game text-white tracking-tight leading-[0.95] mb-2">NUMBER<br><span class="text-gradient-fire">CHALLENGE</span></h2>
+<p class="text-slate-300 font-semibold text-sm md:text-base mb-1">Think. Choose. Guess. Win.</p>
+<p class="text-[12px] text-slate-400 font-medium mb-5">100 escalating levels • 200 turns • 15s pressure • 1 winner</p>
+<div class="flex justify-center gap-2 mb-6 flex-wrap">
+<span class="chip bg-pink-500/15 text-pink-300 border-pink-500/30">⚡ 15s Timer</span>
+<span class="chip bg-cyan-500/15 text-cyan-300 border-cyan-500/30">🛡️ Anti-Cheat</span>
+<span class="chip bg-yellow-500/15 text-yellow-300 border-yellow-500/30">🏆 100 Levels</span>
+</div>
+<div class="space-y-3 mb-4 text-left">
+<label class="text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-400 block ml-1">Enter Your Name</label>
+<div class="relative">
+<input id="input-player-name" type="text" maxlength="15" placeholder="e.g. MasterGamer" class="w-full bg-slate-900/90 border-2 border-slate-700 focus:border-brand-cyan focus:ring-4 focus:ring-cyan-500/20 rounded-2xl px-4 py-3.5 text-white font-bold text-lg placeholder-slate-500 outline-none transition pr-16">
+<span class="absolute right-3.5 top-4 text-[10px] font-black text-slate-500 tracking-widest">MAX 15</span>
+</div>
+</div>
+<div class="space-y-2.5">
+<button onclick="app.handleCreateRoomClick()" class="w-full group relative overflow-hidden rounded-2xl bg-gradient-to-r from-brand-pink to-brand-purple p-[2px] font-bold shadow-lg shadow-pink-600/30 active:scale-[0.98] transition btn-sheen">
+<div class="w-full bg-gradient-to-r from-brand-pink to-brand-purple py-3.5 px-6 rounded-2xl flex items-center justify-center space-x-2 text-white text-[17px] font-black tracking-wide">
+<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
+<span>CREATE ROOM</span>
+</div>
+</button>
+<button onclick="app.showJoinModal()" class="w-full rounded-2xl bg-slate-800/90 hover:bg-slate-700/90 border-2 border-slate-700 hover:border-brand-cyan py-3.5 px-6 text-white text-[17px] font-black tracking-wide flex items-center justify-center space-x-2 transition active:scale-[0.98]">
+<svg class="w-6 h-6 text-brand-cyan" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"/></svg>
+<span>JOIN ROOM</span>
+</button>
+<button onclick="app.startAIGame()" class="w-full rounded-2xl bg-gradient-to-r from-emerald-500/15 to-cyan-500/15 hover:from-emerald-500/25 hover:to-cyan-500/25 border-2 border-emerald-500/40 hover:border-emerald-400 py-3 px-6 text-white text-[15px] font-black tracking-wide flex items-center justify-center space-x-2 transition active:scale-[0.98]">
+<span class="text-xl">🤖</span><span>PRACTICE VS COMPUTER</span><span class="text-[10px] bg-emerald-500 text-white px-2 py-0.5 rounded-full font-black">SOLO</span>
+</button>
+</div>
+<div class="mt-5 pt-4 border-t border-slate-800 flex justify-center items-center space-x-4">
+<button onclick="app.showInstructionsModal()" class="text-xs font-bold text-brand-cyan hover:underline flex items-center space-x-1">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+<span>HOW TO PLAY</span>
+</button>
+<span class="text-slate-700">•</span>
+<button onclick="app.openConfigModal()" class="text-xs font-bold text-slate-400 hover:text-white flex items-center space-x-1">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+<span>FIREBASE RULES</span>
+</button>
+</div>
+</div>
+</div>
+<div class="flex items-center justify-center gap-4 text-[11px] font-bold text-slate-500">
+<div class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-green-400"></span> Synced Realtime</div>
+<div class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-brand-pink"></span> Mobile Ready</div>
+<div class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-brand-cyan"></span> HTML5 • Firebase</div>
+</div>
+</section>
+
+<!-- LOBBY -->
+<section id="screen-lobby" class="w-full hidden flex-col items-center text-center space-y-4">
+<div class="glass border border-slate-700/80 p-6 md:p-8 rounded-3xl shadow-2xl w-full max-w-lg card-shine">
+<div class="flex items-center justify-between pb-4 border-b border-slate-800">
+<button onclick="app.leaveRoom()" class="text-xs font-bold text-slate-400 hover:text-red-400 flex items-center space-x-1 transition">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+<span>LEAVE</span>
+</button>
+<span class="text-xs font-black text-brand-cyan uppercase tracking-[0.2em]">🎮 Game Lobby</span>
+<span class="w-12"></span>
+</div>
+<div class="my-5 p-5 rounded-2xl bg-slate-900/90 border-2 border-brand-purple/50 relative overflow-hidden">
+<div class="absolute inset-0 bg-gradient-to-r from-brand-purple/20 via-transparent to-brand-pink/20 pointer-events-none"></div>
+<div class="text-[11px] uppercase font-black text-slate-400 tracking-[0.25em] mb-1">Room Code</div>
+<div id="lobby-room-code" class="text-5xl font-black font-game tracking-[0.18em] text-brand-yellow drop-shadow-[0_0_15px_rgba(253,187,45,.6)]">------</div>
+<div class="mt-1 text-[11px] text-slate-500 font-semibold">Share this code with your friend</div>
+<div class="mt-3 flex justify-center space-x-2">
+<button onclick="app.copyRoomCode()" class="px-4 py-2 rounded-xl bg-brand-purple/40 hover:bg-brand-purple border border-brand-purple/70 text-xs font-bold text-white flex items-center space-x-1.5 transition active:scale-95">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+<span id="copy-btn-text">COPY CODE</span>
+</button>
+<button onclick="app.shareRoomLink()" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-white flex items-center space-x-1.5 transition active:scale-95">
+<span>🔗 SHARE LINK</span>
+</button>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-3 my-4">
+<div id="lobby-p1-card" class="bg-slate-900/60 p-4 rounded-2xl border-2 border-brand-pink/50 flex flex-col items-center relative">
+<span class="absolute top-2 left-2 text-[10px] font-black uppercase bg-brand-pink/20 text-brand-pink px-2 py-0.5 rounded-md">Host</span>
+<div class="w-14 h-14 rounded-full bg-gradient-to-tr from-brand-pink to-purple-600 flex items-center justify-center text-white text-xl font-black mb-2 mt-3 shadow-lg shadow-pink-500/30 border-2 border-white/20">P1</div>
+<h4 id="lobby-p1-name" class="font-bold text-sm text-white truncate max-w-full">Waiting...</h4>
+<div class="flex items-center space-x-1.5 mt-1.5"><span id="lobby-p1-dot" class="w-2.5 h-2.5 rounded-full bg-slate-600"></span><span id="lobby-p1-status" class="text-[11px] font-bold text-slate-400">Offline</span></div>
+</div>
+<div id="lobby-p2-card" class="bg-slate-900/60 p-4 rounded-2xl border-2 border-slate-700 flex flex-col items-center relative transition">
+<span class="absolute top-2 left-2 text-[10px] font-black uppercase bg-brand-cyan/20 text-brand-cyan px-2 py-0.5 rounded-md">Guest</span>
+<div class="w-14 h-14 rounded-full bg-gradient-to-tr from-brand-cyan to-blue-600 flex items-center justify-center text-white text-xl font-black mb-2 mt-3 shadow-lg shadow-cyan-500/30 border-2 border-white/20">P2</div>
+<h4 id="lobby-p2-name" class="font-bold text-sm text-white truncate max-w-full">Waiting...</h4>
+<div class="flex items-center space-x-1.5 mt-1.5"><span id="lobby-p2-dot" class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping"></span><span id="lobby-p2-status" class="text-[11px] font-bold text-slate-400">Waiting for opponent...</span></div>
+</div>
+</div>
+<div id="lobby-ai-note" class="hidden mb-3 text-[11px] font-bold text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-3 py-2">🤖 Computer opponent will auto-join. No second device needed!</div>
+<div id="lobby-host-controls" class="space-y-2">
+<button id="btn-start-game" onclick="app.startGame()" disabled class="w-full py-4 rounded-2xl bg-slate-800 text-slate-500 font-black text-lg tracking-wider uppercase transition cursor-not-allowed">START GAME</button>
+<button id="btn-add-ai" onclick="app.convertToAIBot()" class="w-full py-2.5 rounded-xl bg-slate-800/80 border border-dashed border-emerald-500/50 text-emerald-300 text-xs font-black uppercase tracking-wider hover:bg-emerald-500/10 transition">+ Add Computer Opponent Instead</button>
+<p id="lobby-msg" class="text-xs font-semibold text-amber-400">Waiting for Player 2 to join...</p>
+</div>
+<div id="lobby-guest-controls" class="hidden py-4 rounded-2xl bg-slate-900/40 border border-slate-800">
+<p class="text-sm font-bold text-brand-cyan animate-pulse">Waiting for host to start the game...</p>
+<p class="text-[11px] text-slate-500 font-semibold mt-1">Get ready — Level 1 starts with 2 numbers!</p>
+</div>
+</div>
+</section>
+
+<!-- GAME -->
+<section id="screen-game" class="w-full hidden flex-col space-y-3">
+<div class="glass border border-slate-700/80 p-3.5 rounded-2xl shadow-xl">
+<div class="flex items-center justify-between mb-2 gap-2">
+<div class="flex items-center space-x-2">
+<span class="px-3 py-1.5 rounded-xl bg-gradient-to-r from-brand-pink to-brand-purple font-black text-white text-xs md:text-sm tracking-wider shadow shadow-pink-500/30 whitespace-nowrap">🔥 LEVEL <span id="game-level-display">1</span> / 100</span>
+<span id="game-turn-display" class="text-[11px] font-black text-slate-200 bg-slate-800 px-2.5 py-1.5 rounded-lg border border-slate-700 whitespace-nowrap">Turn 1/2</span>
+</div>
+<div class="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700">
+<svg class="w-4 h-4 text-brand-yellow animate-spin-slow" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+<span class="text-[11px] font-bold text-slate-400">TIME:</span>
+<span id="game-timer" class="text-sm font-black text-brand-yellow w-8 text-right">15s</span>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-2 my-1">
+<div id="score-card-p1" class="p-2.5 rounded-xl bg-slate-900/90 border-2 border-brand-pink/60 flex items-center justify-between transition">
+<div class="truncate mr-2"><span class="text-[10px] font-black text-brand-pink block tracking-widest">● PLAYER 1</span><span id="score-name-p1" class="text-xs font-black text-white truncate block">P1</span></div>
+<div id="score-val-p1" class="text-2xl font-black font-game text-brand-pink">0</div>
+</div>
+<div id="score-card-p2" class="p-2.5 rounded-xl bg-slate-900/90 border-2 border-brand-cyan/60 flex items-center justify-between transition">
+<div class="truncate mr-2"><span class="text-[10px] font-black text-brand-cyan block tracking-widest">● PLAYER 2</span><span id="score-name-p2" class="text-xs font-black text-white truncate block">P2</span></div>
+<div id="score-val-p2" class="text-2xl font-black font-game text-brand-cyan">0</div>
+</div>
+</div>
+<div class="mt-2.5">
+<div class="flex justify-between text-[10px] font-black text-slate-400 mb-1 tracking-widest"><span>PROGRESS</span><span id="progress-percent" class="text-brand-cyan">1%</span></div>
+<div class="w-full h-2.5 bg-slate-900 rounded-full overflow-hidden p-[2px] border border-slate-800">
+<div id="progress-bar-fill" class="h-full bg-gradient-to-r from-brand-pink via-brand-purple to-brand-cyan rounded-full transition-all duration-500 relative overflow-hidden" style="width:1%;"><div class="absolute inset-0 bg-white/20" style="animation:shimmer 2s linear infinite;background:linear-gradient(100deg,transparent,rgba(255,255,255,.5),transparent);width:50%;"></div></div>
+</div>
+</div>
+</div>
+
+<div id="turn-banner" class="py-3 px-4 rounded-2xl bg-gradient-to-r from-brand-purple/40 to-slate-900/90 border border-brand-purple/50 text-center shadow-lg backdrop-blur-md transition">
+<h3 id="turn-title" class="text-base md:text-lg font-black tracking-wide text-white font-game uppercase">YOUR TURN: CHOOSE A SECRET NUMBER</h3>
+<p id="turn-subtitle" class="text-xs font-semibold text-slate-300 mt-0.5">Pick a number secretly. Opponent will try to guess it.</p>
+</div>
+
+<div class="glass border border-slate-700/80 p-4 md:p-5 rounded-3xl shadow-2xl flex-1 flex flex-col">
+<div class="flex items-center justify-between mb-3">
+<span class="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">🎯 Number Grid • <span id="grid-count-label" class="text-brand-yellow">2 numbers</span></span>
+<span id="grid-mode-badge" class="text-[10px] font-black px-2.5 py-1 rounded-full bg-brand-pink/20 text-pink-300 border border-pink-500/40 uppercase tracking-wider">Secret Pick</span>
+</div>
+<div id="numbers-grid-scroll" class="w-full max-h-[44vh] min-h-[180px] overflow-y-auto pr-1 grid-fade">
+<div id="numbers-grid" class="grid grid-cols-2 gap-3 justify-items-center max-w-sm mx-auto"></div>
+</div>
+<div class="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between gap-3">
+<div class="text-xs font-semibold text-slate-400">Selected: <span id="selected-number-preview" class="text-base font-black text-brand-cyan ml-1">None</span></div>
+<button id="btn-confirm-action" onclick="app.handleConfirmNumber()" disabled class="px-5 py-2.5 rounded-xl bg-slate-800 text-slate-500 font-black text-[13px] tracking-wide uppercase transition cursor-not-allowed whitespace-nowrap">CONFIRM</button>
+</div>
+</div>
+
+<div class="flex items-center justify-between text-[11px] font-bold text-slate-400 px-3 py-1 bg-slate-900/50 rounded-xl border border-slate-800">
+<div>✅ Correct: <span id="stats-correct" class="text-green-400 font-black">0</span></div>
+<div>❌ Wrong: <span id="stats-wrong" class="text-red-400 font-black">0</span></div>
+<div>🎯 Accuracy: <span id="stats-acc" class="text-brand-cyan font-black">0%</span></div>
+<button onclick="app.leaveRoom()" class="text-slate-500 hover:text-red-400 font-black text-[10px] tracking-widest">✕ QUIT</button>
+</div>
+</section>
+
+<!-- GAME OVER -->
+<section id="screen-gameover" class="w-full hidden flex-col items-center text-center space-y-4">
+<div class="glass border border-slate-700/80 p-6 md:p-8 rounded-3xl shadow-2xl w-full max-w-lg card-shine">
+<div class="inline-block px-4 py-1.5 rounded-full bg-brand-yellow/15 border border-brand-yellow/50 text-brand-yellow font-black text-[11px] uppercase tracking-[0.2em] mb-3 animate-bounce-short">🏁 Challenge Completed</div>
+<h2 class="text-4xl md:text-5xl font-black font-game text-white tracking-wide leading-none mb-1">GAME <span class="text-gradient-fire">OVER</span></h2>
+<div id="gameover-winner-banner" class="my-4 py-3.5 px-6 rounded-2xl bg-gradient-to-r from-brand-pink via-brand-purple to-brand-cyan text-white text-xl md:text-2xl font-black uppercase shadow-lg shadow-pink-500/20 pop-in">PLAYER 1 WINS!</div>
+<div class="grid grid-cols-2 gap-3 my-5">
+<div class="p-4 rounded-2xl bg-slate-900/80 border-2 border-brand-pink flex flex-col items-center turn-glow-pink">
+<span id="gameover-p1-name" class="text-xs font-bold text-brand-pink truncate max-w-full">Player 1</span>
+<div id="gameover-p1-score" class="text-5xl font-black font-game text-white mt-1">0</div>
+<span class="text-[10px] text-slate-400 mt-1 uppercase font-black tracking-widest">Points</span>
+</div>
+<div class="p-4 rounded-2xl bg-slate-900/80 border-2 border-brand-cyan flex flex-col items-center turn-glow-cyan">
+<span id="gameover-p2-name" class="text-xs font-bold text-brand-cyan truncate max-w-full">Player 2</span>
+<div id="gameover-p2-score" class="text-5xl font-black font-game text-white mt-1">0</div>
+<span class="text-[10px] text-slate-400 mt-1 uppercase font-black tracking-widest">Points</span>
+</div>
+</div>
+<div class="bg-slate-900/90 rounded-2xl p-4 border border-slate-800 space-y-2 text-xs font-bold text-slate-300 text-left">
+<div class="flex justify-between pb-1.5 border-b border-slate-800"><span class="text-slate-400">Total Levels Completed:</span><span id="gameover-levels-count" class="text-white font-black">100 Levels</span></div>
+<div class="flex justify-between pb-1.5 border-b border-slate-800"><span class="text-slate-400">Total Turns Played:</span><span id="gameover-turns-count" class="text-white font-black">200 Turns</span></div>
+<div class="flex justify-between pb-1.5 border-b border-slate-800"><span class="text-slate-400">Your Correct Guesses:</span><span id="gameover-correct-count" class="text-green-400 font-black">0</span></div>
+<div class="flex justify-between pb-1.5 border-b border-slate-800"><span class="text-slate-400">Your Wrong Guesses:</span><span id="gameover-wrong-count" class="text-red-400 font-black">0</span></div>
+<div class="flex justify-between"><span class="text-slate-400">Overall Accuracy:</span><span id="gameover-accuracy" class="text-brand-cyan font-black">0%</span></div>
+</div>
+<div class="mt-6 space-y-2.5">
+<button id="btn-play-again" onclick="app.requestPlayAgain()" class="w-full py-3.5 rounded-2xl bg-gradient-to-r from-brand-pink to-brand-purple text-white font-black text-base uppercase tracking-wider shadow-lg shadow-pink-500/30 hover:scale-[1.02] active:scale-95 transition btn-sheen">🔁 PLAY AGAIN</button>
+<div class="grid grid-cols-2 gap-2">
+<button onclick="app.leaveRoom(true)" class="py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-[11px] font-black uppercase tracking-wider text-white transition">+ New Room</button>
+<button onclick="app.showScreen('home')" class="py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-[11px] font-black uppercase tracking-wider text-white transition">Home</button>
+</div>
+</div>
+</div>
+</section>
+
+</main>
+
+<footer class="relative z-10 text-center py-3 text-[11px] font-semibold text-slate-500">NUMBER CHALLENGE © 2025 • High-Precision Real-Time Multiplayer • HTML5 • Firebase</footer>
+
+<!-- COUNTDOWN -->
+<div id="modal-countdown" class="fixed inset-0 z-50 bg-brand-dark/92 backdrop-blur-md hidden flex-col items-center justify-center pointer-events-auto" style="background:rgba(11,13,27,.93);">
+<div class="text-center space-y-2 animate-bounce-short pop-in">
+<div class="inline-block px-4 py-1 rounded-full bg-brand-cyan/15 border border-brand-cyan/40 text-brand-cyan text-xs font-black tracking-[0.25em] uppercase">Get Ready</div>
+<div id="countdown-level-title" class="text-2xl md:text-4xl font-black font-game text-brand-cyan uppercase tracking-widest drop-shadow-[0_0_20px_rgba(0,223,216,.6)]">LEVEL 1</div>
+<div class="text-[12px] font-bold text-slate-400 tracking-widest uppercase" id="countdown-sub">Turn 1 • Player 1 hides • Player 2 seeks</div>
+<div id="countdown-number" class="text-8xl md:text-9xl font-black font-game tracking-widest text-gradient-fire drop-shadow-2xl">3</div>
+<div class="flex justify-center gap-2 mt-2"><span class="w-2.5 h-2.5 rounded-full bg-brand-pink animate-ping"></span><span class="w-2.5 h-2.5 rounded-full bg-brand-purple animate-ping" style="animation-delay:.2s"></span><span class="w-2.5 h-2.5 rounded-full bg-brand-cyan animate-ping" style="animation-delay:.4s"></span></div>
+</div>
+</div>
+
+<!-- RESULT -->
+<div id="modal-result" class="fixed inset-0 z-40 hidden flex-col items-center justify-center pointer-events-none p-4" style="background:rgba(11,13,27,.78);backdrop-filter:blur(4px);">
+<div id="result-box" class="pop-in p-6 md:p-8 rounded-3xl bg-brand-card border-2 shadow-2xl text-center max-w-sm w-full" style="background:#151932;">
+<div id="result-icon" class="w-16 h-16 mx-auto rounded-full flex items-center justify-center text-3xl mb-3 shadow-lg">🎉</div>
+<h3 id="result-title" class="text-2xl md:text-3xl font-black font-game mb-1">CORRECT!</h3>
+<p id="result-desc" class="text-sm font-bold text-slate-300 mb-2">Player 2 gained +1 Point!</p>
+<div id="result-secret-reveal" class="text-xs font-extrabold uppercase tracking-wider text-brand-yellow bg-slate-900/80 rounded-xl py-2 px-3 border border-yellow-500/20">The Secret Number Was: <span id="result-secret-num" class="text-base text-white underline ml-1">42</span></div>
+</div>
+</div>
+
+<!-- JOIN -->
+<div id="modal-join" class="fixed inset-0 z-50 hidden items-center justify-center p-4" style="background:rgba(0,0,0,.8);backdrop-filter:blur(8px);">
+<div class="glass border border-slate-700 p-6 rounded-3xl max-w-sm w-full text-center shadow-2xl relative pop-in">
+<button onclick="app.closeJoinModal()" class="absolute top-4 right-4 text-slate-400 hover:text-white transition"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+<h3 class="text-xl font-black text-white font-game uppercase mb-1">ENTER ROOM CODE</h3>
+<p class="text-xs text-slate-400 font-semibold mb-4">Enter the 6-digit code provided by the host.</p>
+<input id="input-join-code" type="text" maxlength="6" inputmode="numeric" placeholder="123456" class="w-full text-center text-3xl tracking-[0.3em] font-black font-game bg-slate-900 border-2 border-slate-700 focus:border-brand-cyan rounded-2xl py-3 text-brand-yellow outline-none mb-3 uppercase pl-4">
+<div id="join-error-msg" class="text-xs font-bold text-red-400 mb-3 hidden"></div>
+<button onclick="app.handleJoinRoomClick()" class="w-full py-3.5 rounded-2xl bg-gradient-to-r from-brand-cyan to-blue-600 text-white font-black text-base uppercase tracking-wider shadow-lg shadow-cyan-500/30 active:scale-95 transition btn-sheen">JOIN NOW</button>
+<p class="text-[11px] text-slate-500 font-semibold mt-3">Tip: open this site in 2 tabs to test instantly in Demo Mode.</p>
+</div>
+</div>
+
+<!-- INSTRUCTIONS -->
+<div id="modal-instructions" class="fixed inset-0 z-50 hidden items-center justify-center p-4" style="background:rgba(0,0,0,.8);backdrop-filter:blur(8px);">
+<div class="glass border border-slate-700 p-6 md:p-7 rounded-3xl max-w-md w-full text-left shadow-2xl relative max-h-[86vh] overflow-y-auto pop-in">
+<button onclick="app.closeInstructionsModal()" class="absolute top-4 right-4 text-slate-400 hover:text-white"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+<div class="flex items-center space-x-2 mb-4"><span class="w-9 h-9 rounded-xl bg-brand-cyan/20 text-brand-cyan flex items-center justify-center font-black text-lg border border-cyan-500/30">?</span><h3 class="text-xl font-black text-white font-game uppercase">How To Play</h3></div>
+<ol class="space-y-3 text-[13px] font-semibold text-slate-300 list-decimal list-inside pr-1">
+<li><strong class="text-white">Enter Name & Create / Join:</strong> <span class="text-slate-400">Type nickname, host creates a 6-digit room, friend joins with code or link.</span></li>
+<li><strong class="text-white">100 Levels of Escalation:</strong>
+<ul class="list-disc list-inside pl-4 text-xs text-slate-400 mt-1 space-y-0.5"><li>Level 1 has 2 number circles.</li><li>Level 2 has 3 number circles.</li><li>... up to Level 100 with 101 circles!</li></ul>
+</li>
+<li><strong class="text-white">Each Level has Exactly 2 Turns:</strong>
+<ul class="list-disc list-inside pl-4 text-xs text-slate-400 mt-1 space-y-1"><li><span class="text-brand-pink font-black">Turn 1:</span> Player 1 secretly picks → Player 2 guesses. Correct = P2 +1.</li><li><span class="text-brand-cyan font-black">Turn 2:</span> Player 2 secretly picks → Player 1 guesses. Correct = P1 +1.</li></ul>
+</li>
+<li><strong class="text-white">15-Second Timer:</strong> <span class="text-slate-400">Each pick/guess has 15s. Timeout = auto-pick & 0 pts for missed guess.</span></li>
+<li><strong class="text-white">Anti-Cheat & Sync:</strong> <span class="text-slate-400">Secret sealed until reveal. Firebase listeners sync both screens instantly.</span></li>
+<li><strong class="text-white">Victory:</strong> <span class="text-slate-400">After 100 levels (200 turns), highest score wins. Play Again to rematch!</span></li>
+</ol>
+<div class="mt-4 p-3 rounded-xl bg-gradient-to-r from-brand-purple/20 to-brand-pink/20 border border-purple-500/30 text-[12px] font-bold text-slate-200">💡 Solo? Tap <span class="text-emerald-300">PRACTICE VS COMPUTER</span> on home — no friend needed!</div>
+<button onclick="app.closeInstructionsModal()" class="w-full mt-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-black text-xs uppercase tracking-wider transition">GOT IT, LET'S PLAY!</button>
+</div>
+</div>
+
+<!-- FIREBASE CONFIG -->
+<div id="modal-firebase-config" class="fixed inset-0 z-50 hidden items-center justify-center p-4" style="background:rgba(0,0,0,.85);backdrop-filter:blur(8px);">
+<div class="glass border border-slate-700 p-6 rounded-3xl max-w-lg w-full text-left shadow-2xl relative max-h-[88vh] overflow-y-auto pop-in">
+<button onclick="app.closeConfigModal()" class="absolute top-4 right-4 text-slate-400 hover:text-white"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+<h3 class="text-xl font-black text-white font-game uppercase mb-1">FIREBASE SETUP & CONFIG</h3>
+<p class="text-xs text-slate-400 font-semibold mb-4">Demo Mode works instantly (2 tabs / vs AI). For real cross-device online play, paste your Firebase Realtime Database config.</p>
+<div class="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-[11px] font-bold text-amber-200 mb-4">Current: <span id="config-mode-label">Demo / Local Relay</span> — 2 tabs on same browser sync via BroadcastChannel. Add Firebase keys for worldwide play.</div>
+<div class="space-y-3 mb-4 text-xs">
+<div><label class="font-bold text-slate-300 block mb-1">Firebase Config JSON:</label><textarea id="input-custom-firebase-config" rows="6" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 font-mono text-[11px] text-cyan-300 focus:border-brand-cyan outline-none"></textarea></div>
+<div class="flex space-x-2">
+<button onclick="app.saveFirebaseConfig()" class="flex-1 py-2.5 rounded-xl bg-brand-cyan text-brand-dark font-black text-xs uppercase hover:bg-cyan-300 transition">APPLY & RECONNECT</button>
+<button onclick="app.loadDemoConfig()" class="px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-xs font-bold text-slate-300 hover:text-white transition">USE DEMO DB</button>
+</div>
+</div>
+<div class="pt-3 border-t border-slate-800 space-y-2">
+<h4 class="font-bold text-xs text-brand-yellow uppercase tracking-wider">Firebase Realtime Database Rules:</h4>
+<pre class="bg-slate-950 p-3 rounded-xl text-[10px] font-mono text-slate-300 overflow-x-auto border border-slate-800">{ "rules": { "rooms": { "$roomCode": { ".read": true, ".write": true } } } }</pre>
+<p class="text-[11px] text-slate-400">Firebase Console &gt; Realtime Database &gt; Rules tab → paste → Publish. Then enable Anonymous Auth.</p>
+<ol class="text-[11px] text-slate-400 font-semibold list-decimal list-inside space-y-0.5"><li>Create project at console.firebase.google.com</li><li>Build → Realtime Database → Create (test mode)</li><li>Build → Authentication → Sign-in → Anonymous → Enable</li><li>Project Settings → Add Web App → copy config → paste above</li></ol>
+</div>
+</div>
+</div>
+
+<script>
+class SoundEngine{
+constructor(){this.ctx=null;this.enabled=true;}
+init(){if(!this.ctx){const AC=window.AudioContext||window.webkitAudioContext;if(AC){try{this.ctx=new AC();}catch(e){}}}if(this.ctx&&this.ctx.state==='suspended'){this.ctx.resume();}}
+toggleSound(){this.enabled=!this.enabled;document.getElementById('sound-icon-on').classList.toggle('hidden',!this.enabled);document.getElementById('sound-icon-off').classList.toggle('hidden',this.enabled);if(this.enabled)this.playTone(587.33,'sine',0.12,0.12);}
+playTone(freq,type='sine',duration=0.15,gainVal=0.15){if(!this.enabled)return;try{this.init();if(!this.ctx)return;const osc=this.ctx.createOscillator();const gain=this.ctx.createGain();osc.type=type;osc.frequency.setValueAtTime(freq,this.ctx.currentTime);gain.gain.setValueAtTime(gainVal,this.ctx.currentTime);gain.gain.exponentialRampToValueAtTime(0.0001,this.ctx.currentTime+duration);osc.connect(gain);gain.connect(this.ctx.destination);osc.start();osc.stop(this.ctx.currentTime+duration);}catch(e){}}
+playClick(){this.playTone(600,'sine',0.08,0.1);}
+playPlayerJoin(){if(!this.enabled)return;setTimeout(()=>this.playTone(440,'triangle',0.12,0.2),0);setTimeout(()=>this.playTone(660,'triangle',0.18,0.2),120);}
+playCountdown(isGo=false){if(!this.enabled)return;if(!isGo){this.playTone(440,'sine',0.15,0.2);}else{this.playTone(880,'triangle',0.35,0.3);}}
+playCorrect(){if(!this.enabled)return;const n=[523.25,659.25,783.99,1046.5];n.forEach((f,i)=>{setTimeout(()=>this.playTone(f,'sine',0.2,0.25),i*80);});}
+playWrong(){if(!this.enabled)return;this.playTone(180,'sawtooth',0.3,0.28);setTimeout(()=>this.playTone(130,'sawtooth',0.4,0.3),150);}
+playLevelComplete(){if(!this.enabled)return;const n=[440,554.37,659.25,880];n.forEach((f,i)=>{setTimeout(()=>this.playTone(f,'triangle',0.25,0.2),i*100);});}
+playVictory(){if(!this.enabled)return;const f=[523.25,659.25,783.99,1046.5,783.99,1046.5,1318.5];f.forEach((fr,i)=>{setTimeout(()=>this.playTone(fr,'triangle',0.3,0.28),i*130);});}
+}
+const soundEngine=new SoundEngine();window.soundEngine=soundEngine;
+</script>
+
+<script>
+(function initBackgroundCanvas(){
+const canvas=document.getElementById('bg-canvas');const ctx=canvas.getContext('2d');let w,h;const particles=[];
+function resize(){w=canvas.width=window.innerWidth;h=canvas.height=window.innerHeight;}
+window.addEventListener('resize',resize);resize();
+const colors=['rgba(121,40,202,0.16)','rgba(255,0,128,0.12)','rgba(0,223,216,0.12)','rgba(253,187,45,0.08)'];
+for(let i=0;i<26;i++){particles.push({x:Math.random()*w,y:Math.random()*h,r:Math.random()*55+22,dx:(Math.random()-0.5)*0.6,dy:(Math.random()-0.5)*0.6,color:colors[Math.floor(Math.random()*colors.length)]});}
+const stars=[];for(let i=0;i<70;i++){stars.push({x:Math.random()*w,y:Math.random()*h,r:Math.random()*1.6+0.4,tw:Math.random()*Math.PI*2,sp:0.02+Math.random()*0.03});}
+function animate(){ctx.clearRect(0,0,w,h);particles.forEach(p=>{p.x+=p.dx;p.y+=p.dy;if(p.x<-p.r)p.x=w+p.r;if(p.x>w+p.r)p.x=-p.r;if(p.y<-p.r)p.y=h+p.r;if(p.y>h+p.r)p.y=-p.r;ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fillStyle=p.color;ctx.fill();});stars.forEach(s=>{s.tw+=s.sp;const a=0.25+Math.abs(Math.sin(s.tw))*0.55;ctx.beginPath();ctx.arc(s.x,s.y,s.r,0,Math.PI*2);ctx.fillStyle=`rgba(255,255,255,${a})`;ctx.fill();});requestAnimationFrame(animate);}
+animate();
+})();
+</script>
+
+<script>
+const GameStates={WAITING:'WAITING',READY:'READY',PLAYING:'PLAYING',GAME_OVER:'GAME_OVER',LEVEL_START:'LEVEL_START',PLAYER1_SELECTING:'PLAYER1_SELECTING',PLAYER2_GUESSING:'PLAYER2_GUESSING',PLAYER2_SELECTING:'PLAYER2_SELECTING',PLAYER1_GUESSING:'PLAYER1_GUESSING',RESULT:'RESULT',GAMEOVER_STATE:'GAME_OVER'};
+class NumberChallengeApp{
+constructor(){
+this.playerId=this.getOrCreatePlayerId();
+this.playerName=localStorage.getItem('nc_player_name')||'';
+this.roomCode=null;this.isHost=false;this.playerRole=null;this.roomRef=null;
+this.currentRoomData=null;this.selectedLocalNumber=null;this.timerInterval=null;this.countdownTimer=null;
+this.stats={correct:0,wrong:0};this.isSimulatedMode=true;this.isAIMode=false;this.db=null;this.auth=null;
+this.lastStateKey='';this.resultKey='';this.aiLock='';this.gameOverCelebrated='';this.simInterval=null;this.bc=null;
+this.firebaseConfig=this.loadStoredFirebaseConfig()||{apiKey:"AIzaSyDummyKeyNumberChallenge2025Project",authDomain:"number-challenge-multiplayer.firebaseapp.com",databaseURL:"https://number-challenge-default-rtdb.firebaseio.com",projectId:"number-challenge-multiplayer",storageBucket:"number-challenge-multiplayer.appspot.com",messagingSenderId:"1234567890",appId:"1:1234567890:web:abcdef123456"};
+this.initApp();
+}
+getOrCreatePlayerId(){let id=localStorage.getItem('nc_player_id');if(!id){id='usr_'+Math.random().toString(36).substring(2,9)+Date.now().toString(36);localStorage.setItem('nc_player_id',id);}return id;}
+loadStoredFirebaseConfig(){try{const raw=localStorage.getItem('nc_firebase_config');return raw?JSON.parse(raw):null;}catch(e){return null;}}
+initApp(){
+const nameInput=document.getElementById('input-player-name');if(this.playerName)nameInput.value=this.playerName;
+nameInput.addEventListener('keydown',(e)=>{if(e.key==='Enter')this.handleCreateRoomClick();});
+document.getElementById('input-join-code').addEventListener('keydown',(e)=>{if(e.key==='Enter')this.handleJoinRoomClick();});
+document.addEventListener('pointerdown',()=>soundEngine.init(),{once:true});
+this.setupFirebase();
+const hash=window.location.hash.replace('#','').trim();if(hash&&/^\d{6}$/.test(hash)){document.getElementById('input-join-code').value=hash;}
+const savedRoom=sessionStorage.getItem('nc_active_room');if(savedRoom){setTimeout(()=>this.attemptReconnect(savedRoom),600);}
+}
+setupFirebase(){
+const isDummy=!this.firebaseConfig||!this.firebaseConfig.apiKey||this.firebaseConfig.apiKey.includes('Dummy')||(this.firebaseConfig.databaseURL&&this.firebaseConfig.databaseURL.includes('number-challenge-default'));
+if(isDummy){this.enableSimulatedMode('Demo Mode');return;}
+try{
+if(!firebase.apps.length){firebase.initializeApp(this.firebaseConfig);}
+this.db=firebase.database();this.auth=firebase.auth();
+if(this.auth){this.auth.signInAnonymously().catch(()=>{});}
+this.isSimulatedMode=false;this.isAIMode=false;
+document.getElementById('db-indicator').className='w-2 h-2 rounded-full bg-emerald-400';
+document.getElementById('db-label').textContent='Live Firebase';document.getElementById('db-label-m').textContent='Live';
+const lbl=document.getElementById('config-mode-label');if(lbl)lbl.textContent='Live Firebase — worldwide cross-device';
+}catch(err){this.enableSimulatedMode('Demo Mode');}
+}
+enableSimulatedMode(label){
+this.isSimulatedMode=true;this.db=null;
+document.getElementById('db-indicator').className='w-2 h-2 rounded-full bg-amber-400 animate-ping';
+document.getElementById('db-label').textContent=label;document.getElementById('db-label-m').textContent='Demo';
+const lbl=document.getElementById('config-mode-label');if(lbl)lbl.textContent='Demo / Local Relay';
+this.initBroadcastChannelFallback();
+}
+initBroadcastChannelFallback(){
+if(!this.bc&&'BroadcastChannel' in window){try{this.bc=new BroadcastChannel('nc_multiplayer_channel');this.bc.onmessage=(event)=>{if(this.roomCode&&event.data&&event.data.roomCode===this.roomCode&&event.data.sender!==this.playerId){this.handleRoomUpdate(event.data.roomData);}};}catch(e){}}
+}
+showScreen(name){
+soundEngine.playClick();
+['home','lobby','game','gameover'].forEach(n=>{const el=document.getElementById('screen-'+n);if(!el)return;const show=n===name;el.classList.toggle('hidden',!show);el.classList.toggle('flex',show);if(n==='game'&&show){el.classList.add('flex-col');}});
+window.scrollTo({top:0,behavior:'smooth'});
+if(name!=='game'){if(this.timerInterval)clearInterval(this.timerInterval);}
+if(name==='home'){this.resetModals();}
+}
+resetModals(){['modal-countdown','modal-result'].forEach(id=>{const m=document.getElementById(id);if(m){m.classList.add('hidden');m.classList.remove('flex');}});const mc=document.getElementById('modal-countdown');if(mc)mc.classList.add('flex-col');const mr=document.getElementById('modal-result');if(mr)mr.classList.add('flex-col');}
+handleCreateRoomClick(){
+soundEngine.playClick();
+const name=document.getElementById('input-player-name').value.trim();
+if(!name){alert('Please enter your name first!');document.getElementById('input-player-name').focus();return;}
+this.playerName=name;localStorage.setItem('nc_player_name',name);
+const code=this.generate6DigitCode();this.createRoom(code);
+}
+generate6DigitCode(){return Math.floor(100000+Math.random()*900000).toString();}
+generateLevelNumbers(level){
+const count=level+1;const numbers=new Set();const maxRange=Math.max(100,count*3);
+let guard=0;while(numbers.size<count&&guard<5000){const num=Math.floor(Math.random()*maxRange)+1;numbers.add(num);guard++;}
+return Array.from(numbers).sort((a,b)=>a-b);
+}
+async createRoom(code){
+this.roomCode=code;this.isHost=true;this.playerRole='player1';this.isAIMode=false;this.stats={correct:0,wrong:0};this.lastStateKey='';this.resultKey='';this.aiLock='';this.gameOverCelebrated='';
+const initial={roomCode:code,hostId:this.playerId,status:GameStates.WAITING,createdAt:Date.now(),isAIMode:false,
+players:{player1:{id:this.playerId,name:this.playerName,online:true,score:0,readyForRematch:false},player2:null},
+game:{level:1,state:GameStates.WAITING,turn:1,numbers:this.generateLevelNumbers(1),secretNumber:null,guess:null,result:null,timerEnd:0}};
+await this.saveRoomToDb(code,initial);sessionStorage.setItem('nc_active_room',code);
+this.listenToRoom(code);this.showScreen('lobby');this.updateLobbyUI(initial);
+history.replaceState(null,'','#'+code);
+}
+showJoinModal(){
+soundEngine.playClick();
+const name=document.getElementById('input-player-name').value.trim();
+if(!name){alert('Please enter your name first!');document.getElementById('input-player-name').focus();return;}
+this.playerName=name;localStorage.setItem('nc_player_name',name);
+const m=document.getElementById('modal-join');m.classList.remove('hidden');m.classList.add('flex');
+setTimeout(()=>document.getElementById('input-join-code').focus(),80);
+}
+closeJoinModal(){soundEngine.playClick();const m=document.getElementById('modal-join');m.classList.add('hidden');m.classList.remove('flex');document.getElementById('join-error-msg').classList.add('hidden');}
+async handleJoinRoomClick(){
+soundEngine.playClick();
+const code=document.getElementById('input-join-code').value.trim();const errorEl=document.getElementById('join-error-msg');
+if(code.length!==6||!/^\d+$/.test(code)){errorEl.textContent='Please enter a valid 6-digit room code.';errorEl.classList.remove('hidden');return;}
+try{
+const roomData=await this.getRoomFromDb(code);
+if(!roomData){errorEl.textContent='Room not found. Check code or create a new room.';errorEl.classList.remove('hidden');return;}
+const p1=roomData.players.player1,p2=roomData.players.player2;
+const alreadyP1=p1&&p1.id===this.playerId;const alreadyP2=p2&&p2.id===this.playerId;
+if(!alreadyP1&&!alreadyP2){
+if(p2&&p1){errorEl.textContent='Room is full (2/2 players).';errorEl.classList.remove('hidden');return;}
+if(roomData.status===GameStates.PLAYING||roomData.status===GameStates.GAME_OVER){if(roomData.status===GameStates.PLAYING){errorEl.textContent='Game already started.';errorEl.classList.remove('hidden');return;}}
+}
+this.roomCode=code;this.isHost=false;this.stats={correct:0,wrong:0};this.lastStateKey='';this.resultKey='';this.aiLock='';this.gameOverCelebrated='';
+if(alreadyP1){this.playerRole='player1';this.isHost=true;}
+else if(alreadyP2){this.playerRole='player2';}
+else{this.playerRole='player2';roomData.players.player2={id:this.playerId,name:this.playerName,online:true,score:0,readyForRematch:false};roomData.status=GameStates.READY;}
+if(roomData.players[this.playerRole])roomData.players[this.playerRole].online=true;
+if(roomData.players[this.playerRole])roomData.players[this.playerRole].name=this.playerName;
+await this.saveRoomToDb(code,roomData);
+sessionStorage.setItem('nc_active_room',code);history.replaceState(null,'','#'+code);
+this.closeJoinModal();this.listenToRoom(code);this.showScreen('lobby');soundEngine.playPlayerJoin();
+}catch(err){errorEl.textContent='Error joining room: '+err.message;errorEl.classList.remove('hidden');}
+}
+async startAIGame(){
+const name=document.getElementById('input-player-name').value.trim()||'You';
+this.playerName=name;localStorage.setItem('nc_player_name',name);soundEngine.playClick();
+const code=this.generate6DigitCode();
+this.roomCode=code;this.isHost=true;this.playerRole='player1';this.isAIMode=true;this.stats={correct:0,wrong:0};this.lastStateKey='';this.resultKey='';this.aiLock='';this.gameOverCelebrated='';
+const data={roomCode:code,hostId:this.playerId,status:GameStates.PLAYING,createdAt:Date.now(),isAIMode:true,
+players:{player1:{id:this.playerId,name:this.playerName,online:true,score:0,readyForRematch:false},player2:{id:'AI_BOT',name:'🤖 Computer',online:true,score:0,readyForRematch:false,isBot:true}},
+game:{level:1,state:GameStates.LEVEL_START,turn:1,numbers:this.generateLevelNumbers(1),secretNumber:null,guess:null,result:null,timerEnd:Date.now()+3500}};
+this.currentRoomData=data;sessionStorage.setItem('nc_active_room',code);
+if(this.isSimulatedMode)localStorage.setItem('nc_room_'+code,JSON.stringify(data));
+this.showScreen('game');this.handleRoomUpdate(data);soundEngine.playPlayerJoin();
+}
+async convertToAIBot(){
+if(!this.currentRoomData||!this.isHost)return;soundEngine.playClick();
+const data=this.currentRoomData;data.isAIMode=true;this.isAIMode=true;
+data.players.player2={id:'AI_BOT',name:'🤖 Computer',online:true,score:0,readyForRematch:false,isBot:true};
+data.status=GameStates.READY;await this.saveRoomToDb(this.roomCode,data);soundEngine.playPlayerJoin();
+setTimeout(()=>{if(this.roomCode)this.startGame();},900);
+}
+isPlayerInRoom(d){return (d.players.player1&&d.players.player1.id===this.playerId)||(d.players.player2&&d.players.player2.id===this.playerId);}
+copyRoomCode(){
+soundEngine.playClick();if(!this.roomCode)return;
+const done=()=>{const b=document.getElementById('copy-btn-text');b.textContent='COPIED!';setTimeout(()=>b.textContent='COPY CODE',2000);};
+if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(this.roomCode).then(done).catch(()=>{prompt('Copy Room Code:',this.roomCode);});}
+else{prompt('Copy Room Code:',this.roomCode);}
+}
+shareRoomLink(){
+soundEngine.playClick();if(!this.roomCode)return;
+const url=location.origin+location.pathname+'#'+this.roomCode;
+if(navigator.clipboard)navigator.clipboard.writeText(url).then(()=>alert('Invite link copied!\n'+url)).catch(()=>prompt('Share this link:',url));
+else prompt('Share this link:',url);
+}
+async saveRoomToDb(code,data){
+this.currentRoomData=JSON.parse(JSON.stringify(data));
+if(this.isAIMode){localStorage.setItem('nc_room_'+code,JSON.stringify(this.currentRoomData));return;}
+if(this.db&&!this.isSimulatedMode){try{await this.db.ref('rooms/'+code).set(this.currentRoomData);}catch(e){localStorage.setItem('nc_room_'+code,JSON.stringify(this.currentRoomData));}}
+else{localStorage.setItem('nc_room_'+code,JSON.stringify(this.currentRoomData));if(this.bc){try{this.bc.postMessage({roomCode:code,roomData:this.currentRoomData,sender:this.playerId});}catch(e){}}}
+}
+async getRoomFromDb(code){
+if(this.db&&!this.isSimulatedMode){try{const s=await this.db.ref('rooms/'+code).once('value');const v=s.val();if(v)return v;}catch(e){}}
+const raw=localStorage.getItem('nc_room_'+code);return raw?JSON.parse(raw):null;
+}
+listenToRoom(code){
+if(this.roomRef){try{this.roomRef.off();}catch(e){}this.roomRef=null;}
+if(this.simInterval){clearInterval(this.simInterval);this.simInterval=null;}
+if(this.db&&!this.isSimulatedMode&&!this.isAIMode){
+this.roomRef=this.db.ref('rooms/'+code);
+this.roomRef.on('value',(snap)=>{const d=snap.val();if(d)this.handleRoomUpdate(d);else this.handleRoomDeleted();});
+try{const key=this.playerRole||(this.isHost?'player1':'player2');const oref=this.db.ref(`rooms/${code}/players/${key}/online`);oref.onDisconnect().set(false);oref.set(true);}catch(e){}
+}else{
+if(this.isAIMode)return;
+this.simInterval=setInterval(async()=>{const d=await this.getRoomFromDb(code);if(d){const a=JSON.stringify(d),b=JSON.stringify(this.currentRoomData);if(a!==b)this.handleRoomUpdate(d);}},700);
+}
+}
+handleRoomUpdate(data){
+const prev=this.currentRoomData;this.currentRoomData=JSON.parse(JSON.stringify(data));
+if(data.isAIMode)this.isAIMode=true;
+if(data.players.player1&&data.players.player1.id===this.playerId){this.playerRole='player1';this.isHost=data.hostId===this.playerId||this.isAIMode;}
+else if(data.players.player2&&data.players.player2.id===this.playerId){this.playerRole='player2';this.isHost=false;}
+if(prev&&!prev.players.player2&&data.players.player2)soundEngine.playPlayerJoin();
+if(data.status===GameStates.GAME_OVER&&data.players.player1?.readyForRematch&&data.players.player2?.readyForRematch&&this.isHost){
+this.resetGameToLevel1();return;
+}
+if(data.status===GameStates.WAITING||data.status===GameStates.READY){
+const onGame=document.getElementById('screen-game').classList.contains('flex')||!document.getElementById('screen-game').classList.contains('hidden');
+if(!onGame||data.status!==GameStates.PLAYING)this.showScreenSilent('lobby');
+this.updateLobbyUI(data);
+}else if(data.status===GameStates.GAME_OVER){this.updateGameOverUI(data);}
+else{this.updateGameUI(data,prev);}
+}
+showScreenSilent(name){['home','lobby','game','gameover'].forEach(n=>{const el=document.getElementById('screen-'+n);if(!el)return;const show=n===name;el.classList.toggle('hidden',!show);el.classList.toggle('flex',show);if(n==='game'&&show)el.classList.add('flex-col');});}
+handleRoomDeleted(){alert('This room has been closed.');this.leaveRoom();}
+updateLobbyUI(data){
+document.getElementById('lobby-room-code').textContent=data.roomCode||'------';
+const p1=data.players.player1,p2=data.players.player2;
+if(p1){document.getElementById('lobby-p1-name').textContent=p1.name;document.getElementById('lobby-p1-dot').className=`w-2.5 h-2.5 rounded-full ${p1.online?'bg-green-400':'bg-red-400'}`;document.getElementById('lobby-p1-status').textContent=p1.online?'Online':'Disconnected';}
+if(p2){document.getElementById('lobby-p2-name').textContent=p2.name;document.getElementById('lobby-p2-dot').className=`w-2.5 h-2.5 rounded-full ${p2.online?'bg-green-400':'bg-red-400'}`;document.getElementById('lobby-p2-status').textContent=p2.online?(p2.isBot?'AI Ready • Online':'Online'):'Disconnected';document.getElementById('lobby-p2-card').classList.add('border-brand-cyan');document.getElementById('lobby-p2-card').classList.remove('border-slate-700');}
+else{document.getElementById('lobby-p2-name').textContent='Waiting...';document.getElementById('lobby-p2-dot').className='w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping';document.getElementById('lobby-p2-status').textContent='Waiting for opponent...';document.getElementById('lobby-p2-card').classList.remove('border-brand-cyan');document.getElementById('lobby-p2-card').classList.add('border-slate-700');}
+const startBtn=document.getElementById('btn-start-game'),msg=document.getElementById('lobby-msg'),hostC=document.getElementById('lobby-host-controls'),guestC=document.getElementById('lobby-guest-controls'),aiBtn=document.getElementById('btn-add-ai'),aiNote=document.getElementById('lobby-ai-note');
+if(this.isHost){hostC.classList.remove('hidden');guestC.classList.add('hidden');
+if(p1&&p2){startBtn.disabled=false;startBtn.className='w-full py-4 rounded-2xl bg-gradient-to-r from-brand-pink to-brand-purple hover:scale-[1.02] text-white font-black text-lg tracking-wider uppercase transition shadow-lg shadow-pink-500/30 cursor-pointer active:scale-95 btn-sheen';msg.textContent='Both players connected! Click START to begin Level 1.';msg.className='text-xs font-bold text-green-400';aiBtn.classList.add('hidden');aiNote.classList.add('hidden');}
+else{startBtn.disabled=true;startBtn.className='w-full py-4 rounded-2xl bg-slate-800 text-slate-500 font-black text-lg tracking-wider uppercase transition cursor-not-allowed';msg.textContent=this.isSimulatedMode?'Demo Mode: open link in 2nd tab & join, or add AI bot below...':'Waiting for Player 2 to join...';msg.className='text-xs font-bold text-amber-400';aiBtn.classList.remove('hidden');aiNote.classList.remove('hidden');}
+}else{hostC.classList.add('hidden');guestC.classList.remove('hidden');}
+}
+async startGame(){
+if(!this.isHost)return;soundEngine.playClick();
+const numbers=this.generateLevelNumbers(1);
+this.currentRoomData.status=GameStates.PLAYING;
+this.currentRoomData.game={level:1,state:GameStates.LEVEL_START,turn:1,numbers:numbers,secretNumber:null,guess:null,result:null,timerEnd:Date.now()+3800};
+this.lastStateKey='';this.resultKey='';this.aiLock='';
+await this.saveRoomToDb(this.roomCode,this.currentRoomData);
+if(this.isAIMode)this.handleRoomUpdate(this.currentRoomData);
+}
+async resetGameToLevel1(){
+const d=this.currentRoomData;if(!d)return;
+d.players.player1.score=0;d.players.player1.readyForRematch=false;
+if(d.players.player2){d.players.player2.score=0;d.players.player2.readyForRematch=false;}
+d.status=GameStates.PLAYING;d.game={level:1,state:GameStates.LEVEL_START,turn:1,numbers:this.generateLevelNumbers(1),secretNumber:null,guess:null,result:null,timerEnd:Date.now()+3800};
+this.stats={correct:0,wrong:0};this.lastStateKey='';this.resultKey='';this.aiLock='';this.gameOverCelebrated='';
+const b=document.getElementById('btn-play-again');b.textContent='🔁 PLAY AGAIN';b.disabled=false;
+await this.saveRoomToDb(this.roomCode,d);if(this.isAIMode)this.handleRoomUpdate(d);
+}
+updateGameUI(data,prev){
+this.showScreenSilent('game');
+document.getElementById('game-level-display').textContent=data.game.level;
+document.getElementById('game-turn-display').textContent=`Turn ${data.game.turn}/2`;
+const prog=Math.max(1,Math.round((data.game.level/100)*100));
+document.getElementById('progress-percent').textContent=prog+'%';
+document.getElementById('progress-bar-fill').style.width=prog+'%';
+const p1=data.players.player1,p2=data.players.player2;
+document.getElementById('score-name-p1').textContent=p1?p1.name:'P1';
+document.getElementById('score-val-p1').textContent=p1?p1.score:0;
+document.getElementById('score-name-p2').textContent=p2?p2.name:'P2';
+document.getElementById('score-val-p2').textContent=p2?p2.score:0;
+const tot=this.stats.correct+this.stats.wrong,acc=tot>0?Math.round((this.stats.correct/tot)*100):0;
+document.getElementById('stats-correct').textContent=this.stats.correct;
+document.getElementById('stats-wrong').textContent=this.stats.wrong;
+document.getElementById('stats-acc').textContent=acc+'%';
+const stateKey=`${data.game.level}-${data.game.turn}-${data.game.state}`;
+if(stateKey!==this.lastStateKey){this.lastStateKey=stateKey;this.selectedLocalNumber=null;document.getElementById('selected-number-preview').textContent='None';}
+this.highlightScoreCards(data);
+switch(data.game.state){
+case GameStates.LEVEL_START:this.handleLevelStartCountdown(data);break;
+case GameStates.PLAYER1_SELECTING:case GameStates.PLAYER2_SELECTING:this.hideCountdown();this.renderSelectingState(data);break;
+case GameStates.PLAYER1_GUESSING:case GameStates.PLAYER2_GUESSING:this.hideCountdown();this.renderGuessingState(data);break;
+case GameStates.RESULT:this.hideCountdown();this.renderResultState(data);break;
+}
+if(this.isAIMode)this.handleAIActions(data);
+}
+highlightScoreCards(data){
+const c1=document.getElementById('score-card-p1'),c2=document.getElementById('score-card-p2');
+c1.style.boxShadow='';c2.style.boxShadow='';
+const s=data.game.state;let active=null;
+if(s===GameStates.PLAYER1_SELECTING||s===GameStates.PLAYER1_GUESSING)active='p1';
+if(s===GameStates.PLAYER2_SELECTING||s===GameStates.PLAYER2_GUESSING)active='p2';
+c1.classList.toggle('ring-2',active==='p1');c1.classList.toggle('ring-pink-500',active==='p1');
+c2.classList.toggle('ring-2',active==='p2');c2.classList.toggle('ring-cyan-400',active==='p2');
+}
+hideCountdown(){const m=document.getElementById('modal-countdown');if(!m.classList.contains('hidden')){m.classList.add('hidden');m.classList.remove('flex');}if(this.countdownTimer){clearInterval(this.countdownTimer);this.countdownTimer=null;}}
+handleLevelStartCountdown(data){
+const modal=document.getElementById('modal-countdown');modal.classList.remove('hidden');modal.classList.add('flex');
+document.getElementById('countdown-level-title').textContent=`LEVEL ${data.game.level}`;
+const sub=document.getElementById('countdown-sub');
+sub.textContent=data.game.turn===1?`Turn 1 • ${data.players.player1?.name||'P1'} hides • ${data.players.player2?.name||'P2'} seeks • ${data.game.numbers.length} numbers`:`Turn 2 • ${data.players.player2?.name||'P2'} hides • ${data.players.player1?.name||'P1'} seeks • ${data.game.numbers.length} numbers`;
+const numEl=document.getElementById('countdown-number');
+if(this.countdownTimer)clearInterval(this.countdownTimer);
+let count=3;numEl.textContent=count;soundEngine.playCountdown(false);
+this.countdownTimer=setInterval(()=>{
+count--;
+if(count>0){numEl.textContent=count;soundEngine.playCountdown(false);}
+else if(count===0){numEl.textContent='GO!';soundEngine.playCountdown(true);numEl.classList.add('scale-110');setTimeout(()=>numEl.classList.remove('scale-110'),200);}
+else{clearInterval(this.countdownTimer);this.countdownTimer=null;modal.classList.add('hidden');modal.classList.remove('flex');
+if(this.isHost){const next=data.game.turn===1?GameStates.PLAYER1_SELECTING:GameStates.PLAYER2_SELECTING;this.transitionGameState(next,15);}}
+},850);
+}
+async transitionGameState(nextState,timerSeconds=15){
+if(!this.isHost)return;
+this.currentRoomData.game.state=nextState;this.currentRoomData.game.timerEnd=Date.now()+(timerSeconds*1000);
+this.currentRoomData.game.guess=null;
+await this.saveRoomToDb(this.roomCode,this.currentRoomData);
+if(this.isAIMode)this.handleRoomUpdate(this.currentRoomData);
+}
+renderSelectingState(data){
+this.startTimer(data.game.timerEnd,()=>this.handleTimerTimeout('SELECTING'));
+const isMine=(data.game.state===GameStates.PLAYER1_SELECTING&&this.playerRole==='player1')||(data.game.state===GameStates.PLAYER2_SELECTING&&this.playerRole==='player2');
+const t=document.getElementById('turn-title'),s=document.getElementById('turn-subtitle'),btn=document.getElementById('btn-confirm-action'),badge=document.getElementById('grid-mode-badge');
+badge.textContent='🔒 Secret Pick';badge.className='text-[10px] font-black px-2.5 py-1 rounded-full bg-brand-pink/20 text-pink-300 border border-pink-500/40 uppercase tracking-wider';
+const banner=document.getElementById('turn-banner');
+if(isMine){t.textContent='YOUR TURN: CHOOSE A SECRET NUMBER';t.className='text-base md:text-lg font-black tracking-wide text-brand-pink font-game uppercase';s.textContent=`Level ${data.game.level} • Pick secretly from ${data.game.numbers.length} numbers. Opponent will guess!`;banner.className='py-3 px-4 rounded-2xl bg-gradient-to-r from-brand-pink/25 to-slate-900/90 border border-brand-pink/50 text-center shadow-lg backdrop-blur-md turn-glow-pink';
+btn.textContent='🔒 CONFIRM NUMBER';this.styleConfirm(btn,this.selectedLocalNumber!==null,'SELECT');
+}else{const opp=this.playerRole==='player1'?(data.players.player2?.name||'Player 2'):data.players.player1.name;t.textContent='OPPONENT IS CHOOSING...';t.className='text-base md:text-lg font-black tracking-wide text-slate-200 font-game uppercase animate-pulse';s.textContent=`Waiting for ${opp} to lock a secret number...`;banner.className='py-3 px-4 rounded-2xl bg-slate-900/80 border border-slate-700 text-center shadow-lg backdrop-blur-md';btn.disabled=true;btn.className='px-5 py-2.5 rounded-xl bg-slate-800 text-slate-500 font-black text-[13px] tracking-wide uppercase transition cursor-not-allowed whitespace-nowrap';}
+this.renderNumbersGrid(data.game.numbers,isMine,'SELECT');
+}
+renderGuessingState(data){
+this.startTimer(data.game.timerEnd,()=>this.handleTimerTimeout('GUESSING'));
+const isMine=(data.game.state===GameStates.PLAYER2_GUESSING&&this.playerRole==='player2')||(data.game.state===GameStates.PLAYER1_GUESSING&&this.playerRole==='player1');
+const t=document.getElementById('turn-title'),s=document.getElementById('turn-subtitle'),btn=document.getElementById('btn-confirm-action'),badge=document.getElementById('grid-mode-badge');
+badge.textContent='🔍 Guess Mode';badge.className='text-[10px] font-black px-2.5 py-1 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 uppercase tracking-wider';
+const banner=document.getElementById('turn-banner');
+if(isMine){t.textContent='FIND THE NUMBER! 🎯';t.className='text-base md:text-lg font-black tracking-wide text-brand-cyan font-game uppercase';s.textContent='Opponent locked their secret. Tap your guess & confirm — +1 if correct!';banner.className='py-3 px-4 rounded-2xl bg-gradient-to-r from-brand-cyan/20 to-slate-900/90 border border-brand-cyan/50 text-center shadow-lg backdrop-blur-md turn-glow-cyan';
+btn.textContent='🎯 CONFIRM GUESS';this.styleConfirm(btn,this.selectedLocalNumber!==null,'GUESS');
+}else{const opp=this.playerRole==='player1'?(data.players.player2?.name||'Player 2'):data.players.player1.name;t.textContent='OPPONENT IS GUESSING...';t.className='text-base md:text-lg font-black tracking-wide text-slate-200 font-game uppercase animate-pulse';s.textContent=`${opp} is trying to locate your secret number.`;banner.className='py-3 px-4 rounded-2xl bg-slate-900/80 border border-slate-700 text-center shadow-lg backdrop-blur-md';btn.disabled=true;btn.className='px-5 py-2.5 rounded-xl bg-slate-800 text-slate-500 font-black text-[13px] tracking-wide uppercase transition cursor-not-allowed whitespace-nowrap';}
+this.renderNumbersGrid(data.game.numbers,isMine,'GUESS');
+}
+styleConfirm(btn,enabled,mode){
+btn.disabled=!enabled;
+if(!enabled){btn.className='px-5 py-2.5 rounded-xl bg-slate-800 text-slate-500 font-black text-[13px] tracking-wide uppercase transition cursor-not-allowed whitespace-nowrap';return;}
+btn.className=mode==='SELECT'?'px-5 py-2.5 rounded-xl bg-gradient-to-r from-brand-pink to-brand-purple text-white font-black text-[13px] tracking-wide uppercase transition hover:scale-105 active:scale-95 shadow-md shadow-pink-500/40 cursor-pointer neon-glow-pink whitespace-nowrap':'px-5 py-2.5 rounded-xl bg-gradient-to-r from-brand-cyan to-blue-600 text-white font-black text-[13px] tracking-wide uppercase transition hover:scale-105 active:scale-95 shadow-md shadow-cyan-500/40 cursor-pointer neon-glow-cyan whitespace-nowrap';
+}
+renderNumbersGrid(list,interactive,mode){
+const grid=document.getElementById('numbers-grid');grid.innerHTML='';
+document.getElementById('grid-count-label').textContent=list.length+' numbers';
+const total=list.length;
+if(total<=6)grid.className='grid grid-cols-2 sm:grid-cols-3 gap-3 justify-items-center max-w-sm mx-auto';
+else if(total<=20)grid.className='grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2.5 justify-items-center';
+else if(total<=50)grid.className='grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2 justify-items-center';
+else grid.className='grid grid-cols-5 sm:grid-cols-7 md:grid-cols-10 gap-1.5 justify-items-center';
+list.forEach(num=>{
+const b=document.createElement('button');
+const sel=this.selectedLocalNumber===num;
+b.className=`number-btn w-full min-w-[42px] min-h-[42px] rounded-2xl font-game font-bold flex items-center justify-center border-2 ${sel?'selected border-brand-cyan':'bg-slate-900/90 border-slate-700/80 text-slate-200 hover:border-brand-purple hover:bg-slate-800'} ${!interactive?'opacity-60 cursor-not-allowed':'cursor-pointer'} ${total>50?'text-[12px] rounded-xl min-w-[36px] min-h-[36px]':'text-sm md:text-base'}`;
+b.textContent=num;if(!interactive)b.disabled=true;
+if(interactive){b.onclick=()=>{soundEngine.playClick();this.selectedLocalNumber=num;document.getElementById('selected-number-preview').textContent=num;this.renderNumbersGrid(list,interactive,mode);const cb=document.getElementById('btn-confirm-action');this.styleConfirm(cb,true,mode);};}
+grid.appendChild(b);
+});
+}
+async handleConfirmNumber(){
+if(this.selectedLocalNumber===null||!this.currentRoomData)return;
+soundEngine.playClick();
+const num=this.selectedLocalNumber;this.selectedLocalNumber=null;document.getElementById('selected-number-preview').textContent='None';document.getElementById('btn-confirm-action').disabled=true;
+const data=this.currentRoomData;
+if(data.game.state===GameStates.PLAYER1_SELECTING&&this.playerRole==='player1'){
+data.game.secretNumber=num;data.game.state=GameStates.PLAYER2_GUESSING;data.game.timerEnd=Date.now()+15000;
+await this.saveRoomToDb(this.roomCode,data);if(this.isAIMode)this.handleRoomUpdate(data);
+}else if(data.game.state===GameStates.PLAYER2_SELECTING&&this.playerRole==='player2'){
+data.game.secretNumber=num;data.game.state=GameStates.PLAYER1_GUESSING;data.game.timerEnd=Date.now()+15000;
+await this.saveRoomToDb(this.roomCode,data);
+}else if(data.game.state===GameStates.PLAYER2_GUESSING&&this.playerRole==='player2'){await this.resolveTurnGuess(num,'player2');}
+else if(data.game.state===GameStates.PLAYER1_GUESSING&&this.playerRole==='player1'){await this.resolveTurnGuess(num,'player1');}
+}
+async resolveTurnGuess(guessNumber,guesserRole){
+const data=this.currentRoomData;if(!data||data.game.state===GameStates.RESULT)return;
+const isCorrect=guessNumber===data.game.secretNumber;
+if(isCorrect){if(guesserRole==='player1')data.players.player1.score=(data.players.player1.score||0)+1;else data.players.player2.score=(data.players.player2.score||0)+1;}
+if(guesserRole===this.playerRole){if(isCorrect)this.stats.correct++;else this.stats.wrong++;}
+data.game.guess=guessNumber;data.game.result={guesser:guesserRole,isCorrect:isCorrect,secretNumber:data.game.secretNumber,guessNumber:guessNumber};data.game.state=GameStates.RESULT;data.game.timerEnd=Date.now()+4000;
+await this.saveRoomToDb(this.roomCode,data);
+if(this.isAIMode)this.handleRoomUpdate(data);
+}
+renderResultState(data){
+const r=data.game.result;if(!r)return;
+const key=`${data.game.level}-${data.game.turn}-${r.guessNumber}-${r.secretNumber}`;
+const modal=document.getElementById('modal-result');modal.classList.remove('hidden');modal.classList.add('flex');
+document.getElementById('result-secret-num').textContent=r.secretNumber!==null?r.secretNumber:'—';
+const box=document.getElementById('result-box'),title=document.getElementById('result-title'),desc=document.getElementById('result-desc'),icon=document.getElementById('result-icon');
+const gname=r.guesser==='player1'?data.players.player1.name:data.players.player2.name;
+if(this.resultKey!==key){
+this.resultKey=key;
+if(r.isCorrect){title.textContent='CORRECT! +1 POINT';title.className='text-2xl md:text-3xl font-black font-game text-green-400 mb-1';desc.textContent=`${gname} nailed it! Exact match.`;icon.textContent='🎯';icon.className='w-16 h-16 mx-auto rounded-full bg-green-500/20 border-2 border-green-500 text-3xl flex items-center justify-center mb-3 shadow-lg shadow-green-500/30';box.style.borderColor='rgba(16,185,129,.8)';soundEngine.playCorrect();try{confetti({particleCount:45,spread:65,origin:{y:0.6}});}catch(e){}}
+else{title.textContent='WRONG! 0 POINTS';title.className='text-2xl md:text-3xl font-black font-game text-red-400 mb-1';desc.textContent=`${gname} chose ${r.guessNumber!==null?r.guessNumber:'nothing (timeout)'}.`;icon.textContent='💥';icon.className='w-16 h-16 mx-auto rounded-full bg-red-500/20 border-2 border-red-500 text-3xl flex items-center justify-center mb-3 shadow-lg shadow-red-500/30';box.style.borderColor='rgba(239,68,68,.8)';soundEngine.playWrong();}
+if(this.isHost){setTimeout(async()=>{modal.classList.add('hidden');modal.classList.remove('flex');await this.advanceTurnOrLevel();},3500);}
+else{setTimeout(()=>{modal.classList.add('hidden');modal.classList.remove('flex');},3500);}
+}
+if(this.timerInterval)clearInterval(this.timerInterval);
+const tEl=document.getElementById('game-timer');if(tEl)tEl.textContent='--';
+}
+async advanceTurnOrLevel(){
+if(!this.isHost)return;const data=this.currentRoomData;if(!data||data.game.state!==GameStates.RESULT)return;
+if(data.game.turn===1){data.game.turn=2;data.game.secretNumber=null;data.game.guess=null;data.game.result=null;data.game.state=GameStates.PLAYER2_SELECTING;data.game.timerEnd=Date.now()+15000;await this.saveRoomToDb(this.roomCode,data);if(this.isAIMode)this.handleRoomUpdate(data);}
+else{const nl=data.game.level+1;
+if(nl>100){data.status=GameStates.GAME_OVER;data.game.state=GameStates.GAMEOVER_STATE;await this.saveRoomToDb(this.roomCode,data);if(this.isAIMode)this.handleRoomUpdate(data);}
+else{soundEngine.playLevelComplete();try{confetti({particleCount:25,spread:55,origin:{y:0.7}});}catch(e){}data.game.level=nl;data.game.turn=1;data.game.numbers=this.generateLevelNumbers(nl);data.game.secretNumber=null;data.game.guess=null;data.game.result=null;data.game.state=GameStates.LEVEL_START;data.game.timerEnd=Date.now()+3800;await this.saveRoomToDb(this.roomCode,data);if(this.isAIMode)this.handleRoomUpdate(data);}
+}
+}
+handleAIActions(data){
+if(!this.isAIMode)return;
+const key=`${data.game.level}-${data.game.turn}-${data.game.state}`;
+if(this.aiLock===key)return;
+if(data.game.state===GameStates.PLAYER2_SELECTING){
+this.aiLock=key;setTimeout(async()=>{
+if(!this.currentRoomData||this.currentRoomData.game.state!==GameStates.PLAYER2_SELECTING)return;
+const nums=this.currentRoomData.game.numbers;const pick=nums[Math.floor(Math.random()*nums.length)];
+this.currentRoomData.game.secretNumber=pick;this.currentRoomData.game.state=GameStates.PLAYER1_GUESSING;this.currentRoomData.game.timerEnd=Date.now()+15000;
+await this.saveRoomToDb(this.roomCode,this.currentRoomData);this.handleRoomUpdate(this.currentRoomData);
+},1300);
+}else if(data.game.state===GameStates.PLAYER2_GUESSING){
+this.aiLock=key;setTimeout(async()=>{
+if(!this.currentRoomData||this.currentRoomData.game.state!==GameStates.PLAYER2_GUESSING)return;
+const nums=this.currentRoomData.game.numbers;const guess=nums[Math.floor(Math.random()*nums.length)];
+const d=this.currentRoomData;const correct=guess===d.game.secretNumber;
+if(correct)d.players.player2.score=(d.players.player2.score||0)+1;
+else this.stats.wrong=this.stats.wrong;
+if(!correct){}else{}
+d.game.guess=guess;d.game.result={guesser:'player2',isCorrect:correct,secretNumber:d.game.secretNumber,guessNumber:guess};d.game.state=GameStates.RESULT;d.game.timerEnd=Date.now()+4000;
+await this.saveRoomToDb(this.roomCode,d);this.handleRoomUpdate(d);
+},1600);
+}
+}
+startTimer(timerEnd,onTimeout){
+if(this.timerInterval)clearInterval(this.timerInterval);
+const upd=()=>{
+const rem=Math.max(0,Math.ceil((timerEnd-Date.now())/1000));
+const el=document.getElementById('game-timer');
+if(el){el.textContent=rem+'s';if(rem<=5){el.className='text-sm font-black text-red-400 animate-pulse w-8 text-right';}else{el.className='text-sm font-black text-brand-yellow w-8 text-right';}}
+if(rem<=0){clearInterval(this.timerInterval);this.timerInterval=null;if(onTimeout)onTimeout();}
+};
+upd();this.timerInterval=setInterval(upd,500);
+}
+async handleTimerTimeout(context){
+if(!this.isAIMode&&!this.isHost)return;
+if(this.isAIMode&&!this.isHost)return;
+const data=this.currentRoomData;if(!data||data.game.state===GameStates.RESULT||data.status===GameStates.GAME_OVER)return;
+if(context==='SELECTING'){
+if(data.game.state!==GameStates.PLAYER1_SELECTING&&data.game.state!==GameStates.PLAYER2_SELECTING)return;
+const fb=data.game.numbers[0];data.game.secretNumber=fb;
+data.game.state=data.game.turn===1?GameStates.PLAYER2_GUESSING:GameStates.PLAYER1_GUESSING;data.game.timerEnd=Date.now()+15000;
+await this.saveRoomToDb(this.roomCode,data);if(this.isAIMode)this.handleRoomUpdate(data);
+}else if(context==='GUESSING'){
+if(data.game.state!==GameStates.PLAYER1_GUESSING&&data.game.state!==GameStates.PLAYER2_GUESSING)return;
+if(this.isAIMode&&data.game.state===GameStates.PLAYER2_GUESSING)return;
+const guesser=data.game.turn===1?'player2':'player1';
+if(guesser===this.playerRole||this.isHost){await this.resolveTurnGuess(null,guesser);}
+}
+}
+updateGameOverUI(data){
+this.showScreenSilent('gameover');this.hideCountdown();
+const m=document.getElementById('modal-result');m.classList.add('hidden');m.classList.remove('flex');
+if(this.timerInterval)clearInterval(this.timerInterval);
+const p1=data.players.player1,p2=data.players.player2,s1=p1?p1.score:0,s2=p2?p2.score:0;
+document.getElementById('gameover-p1-name').textContent=p1?p1.name:'Player 1';
+document.getElementById('gameover-p1-score').textContent=s1;
+document.getElementById('gameover-p2-name').textContent=p2?p2.name:'Player 2';
+document.getElementById('gameover-p2-score').textContent=s2;
+const wb=document.getElementById('gameover-winner-banner');
+if(s1>s2){wb.textContent=`🏆 ${p1.name.toUpperCase()} WINS!`;wb.className='my-4 py-3.5 px-6 rounded-2xl bg-gradient-to-r from-brand-pink to-brand-purple text-white text-xl md:text-2xl font-black uppercase shadow-lg shadow-pink-500/40 pop-in';}
+else if(s2>s1){wb.textContent=`🏆 ${p2.name.toUpperCase()} WINS!`;wb.className='my-4 py-3.5 px-6 rounded-2xl bg-gradient-to-r from-brand-cyan to-blue-600 text-white text-xl md:text-2xl font-black uppercase shadow-lg shadow-cyan-500/40 pop-in';}
+else{wb.textContent=`🤝 IT'S A DRAW!`;wb.className='my-4 py-3.5 px-6 rounded-2xl bg-gradient-to-r from-brand-yellow to-amber-500 text-brand-dark text-xl md:text-2xl font-black uppercase shadow-lg pop-in';}
+const lvl=data.game.level>=100?100:(data.game.level-1||100);
+document.getElementById('gameover-levels-count').textContent=`${lvl} Levels`;
+document.getElementById('gameover-turns-count').textContent=`${lvl*2} Turns`;
+document.getElementById('gameover-correct-count').textContent=this.stats.correct;
+document.getElementById('gameover-wrong-count').textContent=this.stats.wrong;
+const tot=this.stats.correct+this.stats.wrong,acc=tot>0?Math.round((this.stats.correct/tot)*100):0;
+document.getElementById('gameover-accuracy').textContent=acc+'%';
+const ck=this.roomCode+'-over';
+if(this.gameOverCelebrated!==ck){this.gameOverCelebrated=ck;soundEngine.playVictory();try{confetti({particleCount:120,spread:100,origin:{y:0.4}});setTimeout(()=>confetti({particleCount:80,spread:120,origin:{y:0.6}}),600);}catch(e){}}
+const btn=document.getElementById('btn-play-again');
+const me=data.players[this.playerRole];
+if(me&&me.readyForRematch){btn.textContent='WAITING FOR OPPONENT...';btn.disabled=true;}
+else{btn.textContent='🔁 PLAY AGAIN';btn.disabled=false;}
+}
+async requestPlayAgain(){
+soundEngine.playClick();
+if(!this.currentRoomData)return;
+const btn=document.getElementById('btn-play-again');btn.textContent='WAITING FOR OPPONENT...';btn.disabled=true;
+const data=this.currentRoomData,my=this.playerRole;
+if(data.players[my])data.players[my].readyForRematch=true;
+if(this.isAIMode){await this.resetGameToLevel1();return;}
+const r1=data.players.player1?.readyForRematch,r2=data.players.player2?.readyForRematch;
+if(r1&&r2&&this.isHost){await this.resetGameToLevel1();return;}
+await this.saveRoomToDb(this.roomCode,data);
+}
+async attemptReconnect(code){
+try{const data=await this.getRoomFromDb(code);if(data&&this.isPlayerInRoom(data)){this.roomCode=code;if(data.isAIMode)this.isAIMode=true;this.listenToRoom(code);this.handleRoomUpdate(data);}}catch(e){sessionStorage.removeItem('nc_active_room');}
+}
+leaveRoom(createNew=false){
+soundEngine.playClick();sessionStorage.removeItem('nc_active_room');history.replaceState(null,'',' ');
+if(this.roomRef){try{this.roomRef.off();}catch(e){}this.roomRef=null;}
+if(this.simInterval){clearInterval(this.simInterval);this.simInterval=null;}
+if(this.countdownTimer)clearInterval(this.countdownTimer);
+if(this.timerInterval)clearInterval(this.timerInterval);
+this.hideCountdown();const m=document.getElementById('modal-result');m.classList.add('hidden');m.classList.remove('flex');
+this.roomCode=null;this.currentRoomData=null;this.isAIMode=false;this.lastStateKey='';this.resultKey='';this.aiLock='';this.gameOverCelebrated='';this.selectedLocalNumber=null;
+if(createNew){this.showScreen('home');setTimeout(()=>this.handleCreateRoomClick(),250);}else this.showScreen('home');
+}
+showInstructionsModal(){soundEngine.playClick();const m=document.getElementById('modal-instructions');m.classList.remove('hidden');m.classList.add('flex');}
+closeInstructionsModal(){soundEngine.playClick();const m=document.getElementById('modal-instructions');m.classList.add('hidden');m.classList.remove('flex');}
+openConfigModal(){soundEngine.playClick();document.getElementById('input-custom-firebase-config').value=JSON.stringify(this.firebaseConfig,null,2);const m=document.getElementById('modal-firebase-config');m.classList.remove('hidden');m.classList.add('flex');}
+closeConfigModal(){soundEngine.playClick();const m=document.getElementById('modal-firebase-config');m.classList.add('hidden');m.classList.remove('flex');}
+saveFirebaseConfig(){soundEngine.playClick();const raw=document.getElementById('input-custom-firebase-config').value.trim();try{const p=JSON.parse(raw);localStorage.setItem('nc_firebase_config',JSON.stringify(p));alert('Configuration saved! Reconnecting...');location.reload();}catch(e){alert('Invalid JSON config format.');}}
+loadDemoConfig(){soundEngine.playClick();localStorage.removeItem('nc_firebase_config');alert('Reset to Demo Mode!');location.reload();}
+}
+let app;window.addEventListener('DOMContentLoaded',()=>{app=new NumberChallengeApp();window.app=app;});
+</script>
+</body>
+</html>
